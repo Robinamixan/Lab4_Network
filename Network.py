@@ -1,11 +1,13 @@
 import random
 import math
+import copy
 
 
 class Network:
     layers = []
     not_activated_layers = []
     weights = {}
+    thresholds = []
 
     learn_images = []
     learn_matrixes = []
@@ -13,7 +15,7 @@ class Network:
     learn_outputs = []
     learn_outputs_errors = []
 
-    def __init__(self, layers_amount, neuron_amount_array):
+    def __init__(self, layers_amount, neuron_amount_array, learning_rate=0.1, max_error=0.01):
         self.learn_sets = []
         self.learn_images = []
         self.learn_matrixes = []
@@ -22,12 +24,15 @@ class Network:
 
         self.layers = []
         self.not_activated_layers = []
+        self.thresholds = []
 
-        self.learning_rate = 0.01
+        self.learning_rate = learning_rate
+        self.max_error = max_error
 
         for i in range(0, layers_amount):
             self.layers.append([])
             self.not_activated_layers.append([])
+            self.thresholds.append([])
 
             if not neuron_amount_array[i]:
                 break
@@ -35,6 +40,8 @@ class Network:
             for j in range(0, neuron_amount_array[i]):
                 self.layers[i].append(0)
                 self.not_activated_layers[i].append(0)
+                rdn = random.uniform(-1.0, 1.0)
+                self.thresholds[i].append(rdn)
 
         self.weights = {}
         for i in range(0, layers_amount - 1):
@@ -80,17 +87,22 @@ class Network:
         self.convert_images_to_matrixes(self.learn_images, self.learn_matrixes)
         self.convert_matrixes_to_vectors(self.learn_matrixes, self.learn_sets)
 
-        for learn_stage in range(2000):
+        max_error = 1
+        while max_error > self.max_error:
+            stage_errors = []
             for learn_index, learn_set in enumerate(self.learn_sets):
-                self.activate(learn_set)
+                self.activate(copy.copy(learn_set))
 
                 net_error_e = self.calculate_net_error(learn_index)
-                print(net_error_e)
+                stage_errors.append(net_error_e)
 
                 self.calculate_layers_error(learn_index)
+                self.update_weights()
 
-        self.activate(self.learn_sets[0])
-        c = 3
+            max_error = max(stage_errors)
+            print(max_error)
+
+        self.activate(copy.copy(self.learn_sets[1]))
 
     def calculate_layers_error(self, learn_index):
         self.clear_errors()
@@ -104,21 +116,19 @@ class Network:
             d = current_output[i] - expected_output[i]
             self.learn_layers_errors[current_layer_index][i] = d * (current_output[i] * (1 - current_output[i]))
 
+        while current_layer_index > 1:
+            current_layer_index -= 1
+            index = str(current_layer_index) + '_' + str(current_layer_index + 1)
+            weights = self.weights[index]
+
+            for i in range(0, len(self.learn_layers_errors[current_layer_index])):
+                hidden_error = 0
+                for j in range(0, len(self.learn_layers_errors[current_layer_index + 1])):
+                    hidden_error += self.learn_layers_errors[current_layer_index + 1][j] * weights[i][j]
+
+                self.learn_layers_errors[current_layer_index][i] = hidden_error * (self.layers[current_layer_index][i] * (1 - self.layers[current_layer_index][i]))
 
 
-        current_layer_index -= 1
-        index = str(current_layer_index) + '_' + str(current_layer_index + 1)
-        weights = self.weights[index]
-
-        for i in range(0, len(self.learn_layers_errors[current_layer_index])):
-            hidden_error = 0
-            for j in range(0, len(self.learn_layers_errors[current_layer_index + 1])):
-                hidden_error += self.learn_layers_errors[current_layer_index + 1][j] * weights[i][j]
-
-            self.learn_layers_errors[current_layer_index][i] = hidden_error * (self.layers[current_layer_index][i] * (1 - self.layers[current_layer_index][i]))
-
-        self.update_weights(1, 2)
-        self.update_weights(0, 1)
 
     def clear_errors(self):
         self.learn_layers_errors = []
@@ -127,15 +137,23 @@ class Network:
             for j in range(0, len(self.layers[i])):
                 self.learn_layers_errors[i].append(0)
 
-    def update_weights(self, first_index, second_index):
-        index = str(first_index) + '_' + str(second_index)
-        weights = self.weights[index]
+    def update_weights(self):
+        current_layer_index = len(self.layers) - 1
 
-        for i in range(0, len(weights)):
-            for j in range(0, len(weights[i])):
-                weights[i][j] -= self.learning_rate * self.learn_layers_errors[second_index][j] * self.layers[first_index][i]
+        while current_layer_index > 0:
+            second_index = current_layer_index
+            first_index = current_layer_index - 1
 
-        self.weights[index] = weights
+            index = str(first_index) + '_' + str(second_index)
+            weights = self.weights[index]
+
+            for i in range(0, len(weights)):
+                for j in range(0, len(weights[i])):
+                    weights[i][j] -= self.learning_rate * self.learn_layers_errors[second_index][j] * self.layers[first_index][i]
+
+            self.weights[index] = weights
+
+            current_layer_index -= 1
 
     def calculate_net_error(self, learn_index):
         sum = 0
@@ -170,3 +188,20 @@ class Network:
 
                     self.not_activated_layers[layer_index][neuron_index] = current_layer[neuron_index]
                     current_layer[neuron_index] = self.neuron_activate(current_layer[neuron_index])
+
+    def activate_result(self, results):
+        for i in range(len(results)):
+            results[i] *= 100
+            results[i] = round(results[i], 2)
+
+        return results
+
+    def play_image(self, image):
+        matrix = []
+        input = []
+        self.convert_images_to_matrixes([image], matrix)
+        self.convert_matrixes_to_vectors(matrix, input)
+
+        self.activate(input[0])
+
+        return self.activate_result(self.layers[-1])
